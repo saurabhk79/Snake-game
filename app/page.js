@@ -22,7 +22,9 @@ import {
   doc,
 } from "firebase/firestore";
 
-const GAME_GRID_SIZE = 20;
+const CANVAS_SIZE = 400;
+const SCALE = 20;
+
 const INITIAL_SPEED = 150;
 const SPEED_INCREMENT_INTERVAL = 5;
 const SPEED_DECREMENT_AMOUNT = 10;
@@ -94,7 +96,6 @@ function App() {
           setUserId(auth.currentUser?.uid || generateRandomId());
         } catch (error) {
           console.error("Error signing in anonymously:", error);
-
           setUserId(generateRandomId());
         }
       }
@@ -114,12 +115,11 @@ function App() {
   const gameLoopRef = useRef(null);
   const snakeRef = useRef([{ x: 0, y: 0 }]);
   const foodRef = useRef({ x: 0, y: 0 });
-  const dxRef = useRef(0);
+  const dxRef = useRef(SCALE);
   const dyRef = useRef(0);
   const scoreRef = useRef(0);
   const gameStartedRef = useRef(false);
   const speedRef = useRef(INITIAL_SPEED);
-  const scaleRef = useRef(0);
 
   useEffect(() => {
     const storedUsername = localStorage.getItem("snakeGameUsername");
@@ -166,60 +166,12 @@ function App() {
     return () => unsubscribe();
   }, [isAuthReady, db, userId, appId]);
 
-  const draw = useCallback((ctx) => {
-    const currentScale = scaleRef.current;
-    const canvas = ctx.canvas;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    ctx.fillStyle = "#4CAF50";
-    snakeRef.current.forEach((segment) => {
-      ctx.fillRect(segment.x, segment.y, currentScale, currentScale);
-      ctx.strokeStyle = "#388E3C";
-      ctx.strokeRect(segment.x, segment.y, currentScale, currentScale);
-    });
-
-    ctx.fillStyle = "#F44336";
-    ctx.beginPath();
-    ctx.arc(
-      foodRef.current.x + currentScale / 2,
-      foodRef.current.y + currentScale / 2,
-      currentScale / 2,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
-  }, []);
-
-  const setupCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (canvas) {
-      canvas.width = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
-
-      scaleRef.current = canvas.width / GAME_GRID_SIZE;
-      const ctx = canvas.getContext("2d");
-      draw(ctx);
-    }
-  }, [draw]);
-
-  useEffect(() => {
-    if (currentPage === "game") {
-      setupCanvas();
-      window.addEventListener("resize", setupCanvas);
-      return () => {
-        window.removeEventListener("resize", setupCanvas);
-      };
-    }
-  }, [currentPage, setupCanvas]);
-
   const generateFood = useCallback(() => {
-    const currentScale = scaleRef.current;
-    const maxX = GAME_GRID_SIZE;
-    const maxY = GAME_GRID_SIZE;
+    const maxX = CANVAS_SIZE / SCALE;
+    const maxY = CANVAS_SIZE / SCALE;
     let newFood = {
-      x: Math.floor(Math.random() * maxX) * currentScale,
-      y: Math.floor(Math.random() * maxY) * currentScale,
+      x: Math.floor(Math.random() * maxX) * SCALE,
+      y: Math.floor(Math.random() * maxY) * SCALE,
     };
 
     while (
@@ -228,22 +180,41 @@ function App() {
       )
     ) {
       newFood = {
-        x: Math.floor(Math.random() * maxX) * currentScale,
-        y: Math.floor(Math.random() * maxY) * currentScale,
+        x: Math.floor(Math.random() * maxX) * SCALE,
+        y: Math.floor(Math.random() * maxY) * SCALE,
       };
     }
     foodRef.current = newFood;
   }, []);
 
-  const checkCollision = useCallback((head) => {
-    const canvas = canvasRef.current;
-    const currentScale = scaleRef.current;
+  const draw = useCallback((ctx) => {
+    ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
+    ctx.fillStyle = "#4CAF50";
+    snakeRef.current.forEach((segment) => {
+      ctx.fillRect(segment.x, segment.y, SCALE, SCALE);
+      ctx.strokeStyle = "#388E3C";
+      ctx.strokeRect(segment.x, segment.y, SCALE, SCALE);
+    });
+
+    ctx.fillStyle = "#F44336";
+    ctx.beginPath();
+    ctx.arc(
+      foodRef.current.x + SCALE / 2,
+      foodRef.current.y + SCALE / 2,
+      SCALE / 2,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+  }, []);
+
+  const checkCollision = useCallback((head) => {
     if (
       head.x < 0 ||
-      head.x >= canvas.width ||
+      head.x >= CANVAS_SIZE ||
       head.y < 0 ||
-      head.y >= canvas.height
+      head.y >= CANVAS_SIZE
     ) {
       return true;
     }
@@ -324,10 +295,9 @@ function App() {
   }, [submitScore]);
 
   const update = useCallback(() => {
-    const currentScale = scaleRef.current;
     const head = {
-      x: snakeRef.current[0].x + dxRef.current * currentScale,
-      y: snakeRef.current[0].y + dyRef.current * currentScale,
+      x: snakeRef.current[0].x + dxRef.current,
+      y: snakeRef.current[0].y + dyRef.current,
     };
 
     if (checkCollision(head)) {
@@ -363,7 +333,7 @@ function App() {
 
   const startGame = useCallback(() => {
     snakeRef.current = [{ x: 0, y: 0 }];
-    dxRef.current = 1;
+    dxRef.current = SCALE;
     dyRef.current = 0;
     scoreRef.current = 0;
     setScore(0);
@@ -378,58 +348,24 @@ function App() {
     gameLoopRef.current = setInterval(update, speedRef.current);
   }, [generateFood, update]);
 
-  const changeDirection = useCallback((direction) => {
-    if (!gameStartedRef.current) return;
-    const currentDx = dxRef.current;
-    const currentDy = dyRef.current;
-
-    switch (direction) {
-      case "left":
-        if (currentDx === 0) {
-          dxRef.current = -1;
-          dyRef.current = 0;
-        }
-        break;
-      case "up":
-        if (currentDy === 0) {
-          dxRef.current = 0;
-          dyRef.current = -1;
-        }
-        break;
-      case "right":
-        if (currentDx === 0) {
-          dxRef.current = 1;
-          dyRef.current = 0;
-        }
-        break;
-      case "down":
-        if (currentDy === 0) {
-          dxRef.current = 0;
-          dyRef.current = 1;
-        }
-        break;
-      default:
-        break;
-    }
-  }, []);
-
   useEffect(() => {
     const handleKeyDown = (e) => {
-      switch (e.key) {
-        case "ArrowLeft":
-          changeDirection("left");
-          break;
-        case "ArrowUp":
-          changeDirection("up");
-          break;
-        case "ArrowRight":
-          changeDirection("right");
-          break;
-        case "ArrowDown":
-          changeDirection("down");
-          break;
-        default:
-          break;
+      if (!gameStartedRef.current) return;
+
+      const keyPressed = e.key;
+
+      if (keyPressed === "ArrowLeft" && dxRef.current === 0) {
+        dxRef.current = -SCALE;
+        dyRef.current = 0;
+      } else if (keyPressed === "ArrowUp" && dyRef.current === 0) {
+        dxRef.current = 0;
+        dyRef.current = -SCALE;
+      } else if (keyPressed === "ArrowRight" && dxRef.current === 0) {
+        dxRef.current = SCALE;
+        dyRef.current = 0;
+      } else if (keyPressed === "ArrowDown" && dyRef.current === 0) {
+        dxRef.current = 0;
+        dyRef.current = SCALE;
       }
     };
 
@@ -437,7 +373,7 @@ function App() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [changeDirection]);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-800 to-indigo-900 text-white font-inter flex flex-col items-center justify-center p-4">
@@ -498,54 +434,16 @@ function App() {
                     flex-direction: column;
                     align-items: center;
                     padding: 20px;
-                    max-width: 90%; 
-                    width: 100%; 
                 }
                 canvas {
                     background-color: #1A202C;
                     border-radius: 8px;
                     display: block;
-                    
-                    width: 100%; 
-                    height: 100%; 
-                    aspect-ratio: 1 / 1; 
+                    width: ${CANVAS_SIZE}px; 
+                    height: ${CANVAS_SIZE}px; 
                     box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
                     margin-bottom: 20px; 
                 }
-                .d-pad {
-                    display: grid;
-                    grid-template-areas:
-                        ". up ."
-                        "left center right"
-                        ". down .";
-                    gap: 10px;
-                    width: 180px; 
-                    margin-top: 20px;
-                    margin-bottom: 20px; 
-                }
-                .d-pad button {
-                    width: 50px;
-                    height: 50px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 1.5rem;
-                    background-color: #4A5568; 
-                    color: white;
-                    border-radius: 0.5rem;
-                    box-shadow: 0 3px 6px rgba(0,0,0,0.2);
-                    transition: all 0.1s ease-in-out;
-                    border: none;
-                }
-                .d-pad button:active {
-                    transform: scale(0.95);
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-                }
-                .d-pad .up    { grid-area: up; }
-                .d-pad .left  { grid-area: left; }
-                .d-pad .right { grid-area: right; }
-                .d-pad .down  { grid-area: down; }
-                .d-pad .center { grid-area: center; visibility: hidden; } 
                 `}
       </style>
 
@@ -665,30 +563,19 @@ function App() {
           <h2 className="text-3xl font-semibold mb-4 text-white">
             Score: {score}
           </h2>
-          <canvas ref={canvasRef}></canvas>
+          <canvas
+            ref={canvasRef}
+            width={CANVAS_SIZE}
+            height={CANVAS_SIZE}
+          ></canvas>
 
-          <div className="d-pad">
-            <button className="up" onClick={() => changeDirection("up")}>
-              &#9650;
-            </button>
-            <button className="left" onClick={() => changeDirection("left")}>
-              &#9664;
-            </button>
-            <div className="center"></div>
-            <button className="right" onClick={() => changeDirection("right")}>
-              &#9654;
-            </button>
-            <button className="down" onClick={() => changeDirection("down")}>
-              &#9660;
-            </button>
-          </div>
           <div className="mt-6 flex flex-col sm:flex-row gap-4 w-full justify-center">
             <button onClick={endGame} className="btn btn-secondary text-xl">
               End Game
             </button>
           </div>
           <p className="text-gray-400 text-sm mt-4 text-center">
-            Use Arrow Keys or on-screen controls to move the snake.
+            Use Arrow Keys to move the snake.
           </p>
         </div>
       )}
